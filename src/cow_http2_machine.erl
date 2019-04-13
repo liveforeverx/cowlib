@@ -26,6 +26,8 @@
 -export([send_or_queue_data/4]).
 -export([update_window/2]).
 -export([update_window/3]).
+-export([update_window2/1]).
+-export([update_window2/2]).
 -export([reset_stream/2]).
 -export([get_local_setting/2]).
 -export([get_last_streamid/1]).
@@ -353,7 +355,7 @@ data_frame(Frame={data, StreamID, _, Data}, State0=#http2_machine{
 			%% DATA frames received for such lingering streams.
 			case lists:member(StreamID, Lingering) of
 				true ->
-					{ok, State0};
+					{ok, {lingering_data, StreamID}, State};
 				false ->
 					{error, {connection_error, stream_closed,
 						'DATA frame received for a closed stream. (RFC7540 5.1)'},
@@ -1276,6 +1278,26 @@ queue_data(Stream=#stream{local_buffer=Q0, local_buffer_size=Size0}, IsFin, Data
 	Stream#stream{local_buffer=Q, local_buffer_size=Size0 + DataSize}.
 
 %% Public interface to update the flow control window.
+
+-spec update_window2(State)
+	-> {State, integer()} when State::http2_machine().
+update_window2(State=#http2_machine{remote_window=RemoteWindow, local_settings=#{initial_window_size := WindowMaxSize}}) when RemoteWindow =< (WindowMaxSize / 2) ->
+	Size = WindowMaxSize - RemoteWindow,
+	{State#http2_machine{remote_window=WindowMaxSize}, Size};
+update_window2(State) ->
+	{State, 0}.
+
+-spec update_window2(cow_http2:streamid(), State)
+	-> {State, integer()} when State::http2_machine().
+update_window2(StreamID, State=#http2_machine{local_settings=#{initial_window_size := WindowMaxSize}}) ->
+	Stream = #stream{remote_window=RemoteWindow} = stream_get(StreamID, State),
+	if
+		RemoteWindow =< (WindowMaxSize / 2) ->
+			Size = WindowMaxSize - RemoteWindow,
+			{stream_store(Stream#stream{remote_window=WindowMaxSize}, State), Size};
+		true ->
+			{State, 0}
+	end.
 
 -spec update_window(1..16#7fffffff, State)
 	-> State when State::http2_machine().
