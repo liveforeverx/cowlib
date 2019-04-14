@@ -1290,12 +1290,16 @@ update_window2(State) ->
 -spec update_window2(cow_http2:streamid(), State)
 	-> {State, integer()} when State::http2_machine().
 update_window2(StreamID, State=#http2_machine{local_settings=#{initial_window_size := WindowMaxSize}}) ->
-	Stream = #stream{remote_window=RemoteWindow} = stream_get(StreamID, State),
-	if
-		RemoteWindow =< (WindowMaxSize / 2) ->
-			Size = WindowMaxSize - RemoteWindow,
-			{stream_store(Stream#stream{remote_window=WindowMaxSize}, State), Size};
-		true ->
+	case stream_get(StreamID, State) of
+		Stream = #stream{remote_window=RemoteWindow} ->
+			if
+				RemoteWindow =< (WindowMaxSize / 2) ->
+					Size = WindowMaxSize - RemoteWindow,
+					{stream_store(Stream#stream{remote_window=WindowMaxSize}, State), Size};
+				true ->
+					{State, 0}
+			end;
+		_ ->
 			{State, 0}
 	end.
 
