@@ -33,6 +33,7 @@
 -export([get_last_streamid/1]).
 -export([get_stream_local_state/2]).
 -export([get_stream_remote_state/2]).
+-export([close/1]).
 
 -type opts() :: #{
 	enable_connect_protocol => boolean(),
@@ -293,10 +294,7 @@ init_upgrade_stream(Method, State=#http2_machine{mode=server, remote_streamid=0,
 	| {error, {connection_error, cow_http2:error(), atom()}, State}
 	when State::http2_machine().
 frame(Frame, State=#http2_machine{state=settings, preface_timer=TRef}) ->
-	ok = case TRef of
-		undefined -> ok;
-		_ -> erlang:cancel_timer(TRef, [{async, true}, {info, false}])
-	end,
+	ok = cancel_timer(TRef),
 	settings_frame(Frame, State#http2_machine{state=normal, preface_timer=undefined});
 frame(Frame, State=#http2_machine{state={continuation, _, _}}) ->
 	continuation_frame(Frame, State);
@@ -846,10 +844,7 @@ streams_update_local_window(State=#http2_machine{streams=Streams0}, Increment) -
 
 settings_ack_frame(State0=#http2_machine{settings_timer=TRef,
 		local_settings=Local0, next_settings=NextSettings}) ->
-	ok = case TRef of
-		undefined -> ok;
-		_ -> erlang:cancel_timer(TRef, [{async, true}, {info, false}])
-	end,
+	ok = cancel_timer(TRef),
 	Local = maps:merge(Local0, NextSettings),
 	State1 = State0#http2_machine{settings_timer=undefined,
 		local_settings=Local, next_settings=#{}},
@@ -1414,3 +1409,11 @@ stream_linger(StreamID, State=#http2_machine{local_lingering_streams=Lingering0}
 	%% We only keep up to 100 streams in this state. @todo Make it configurable?
 	Lingering = [StreamID|lists:sublist(Lingering0, 100 - 1)],
 	State#http2_machine{local_lingering_streams=Lingering}.
+
+close(#http2_machine{preface_timer=PrefaceTimer, settings_timer=SettingTimer}) ->
+	cancel_timer(PrefaceTimer),
+	cancel_timer(SettingTimer),
+	ok.
+
+cancel_timer(undefined) -> ok;
+cancel_timer(Ref) -> erlang:cancel_timer(Ref, [{async, true}, {info, false}]).
